@@ -3,23 +3,42 @@
   <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
     <title>Bumblebee</title>
 
-    <!-- Web app iPhone / iPad -->
+    <!-- Home-screen web app (iOS): full screen, no Safari bars, status bar drawn over the game -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Bumblebee">
     <meta name="application-name" content="Bumblebee">
-    <meta name="theme-color" content="#0a8aa8">
+    <meta name="theme-color" content="#000000">
     <meta name="format-detection" content="telephone=no">
-    <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
     <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
+    <link rel="shortcut icon" href="icons/favicon.ico">
 
     <link rel="stylesheet" href="TemplateData/style.css">
+    <style>
+      /* Mobile / home-screen app: the canvas covers the whole screen (notch and home bar included). */
+      html.mobile, html.mobile body {
+        position: fixed; inset: 0; width: 100%; height: 100%;
+        margin: 0; padding: 0; overflow: hidden; background: #000;
+        overscroll-behavior: none;
+      }
+      html.mobile #unity-container.unity-mobile { position: fixed; inset: 0; width: 100%; height: 100%; }
+      html.mobile #unity-fullscreen-container, html.mobile #unity-canvas { width: 100%; height: 100%; }
+      /* No zoom gestures, no long-press callout/magnifier, no selection, no tap flash. */
+      html.mobile, html.mobile * {
+        touch-action: none;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none; user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+    </style>
   </head>
   <body>
     <div id="unity-container" class="unity-desktop">
@@ -74,9 +93,9 @@
       var loaderUrl = buildUrl + "/Build Web.loader.js";
       var config = {
         arguments: [],
-        dataUrl: buildUrl + "/Build Web.data.br",
-        frameworkUrl: buildUrl + "/Build Web.framework.js.br",
-        codeUrl: buildUrl + "/Build Web.wasm.br",
+        dataUrl: buildUrl + "/Build Web.data.unityweb",
+        frameworkUrl: buildUrl + "/Build Web.framework.js.unityweb",
+        codeUrl: buildUrl + "/Build Web.wasm.unityweb",
         streamingAssetsUrl: "StreamingAssets",
 
         // If you have a custom web site structure, or want to place multiple Unity build instances on the same page,
@@ -112,34 +131,33 @@
       // JS_FileSystem_Sync() behavior, but in future Unity version, this will be
       // expected to change.
 
-      // iPadOS si presenta come "Macintosh": lo riconosciamo dal touch.
+      // iPadOS 13+ reports itself as a Mac: recognize it by its touch screen.
       var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
-                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                     (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
       if (isMobile) {
-        // Mobile device style: fill the whole screen with the game canvas:
-        document.documentElement.className = "unity-mobile";
+        // Mobile device style: fill the whole screen with the game canvas.
+        document.documentElement.classList.add("mobile");
         document.querySelector("#unity-container").className = "unity-mobile";
         canvas.className = "unity-mobile";
 
-        // Blocca pinch-zoom, doppio tap-zoom e scroll elastico di Safari
-        ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (ev) {
-          document.addEventListener(ev, function (e) { e.preventDefault(); }, { passive: false });
-        });
-        document.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
+        // Retina phones are 3x: cap at 2x to keep the frame rate up (set 1 for even more speed).
+        config.devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+
+        // Block pinch-zoom, double-tap zoom, page scrolling/bounce and the long-press menu.
+        // Unity's own touch listeners on the canvas still receive every event.
+        var block = function (e) { e.preventDefault(); };
+        ["gesturestart", "gesturechange", "gestureend", "dblclick", "contextmenu", "selectstart"]
+          .forEach(function (t) { document.addEventListener(t, block, { passive: false }); });
+        document.addEventListener("touchmove", block, { passive: false });
         var lastTouchEnd = 0;
-        document.addEventListener('touchend', function (e) {
+        document.addEventListener("touchend", function (e) {
           var now = Date.now();
-          if (now - lastTouchEnd <= 300) e.preventDefault();
+          if (now - lastTouchEnd < 350) e.preventDefault(); // second tap of a double-tap
           lastTouchEnd = now;
         }, { passive: false });
-        document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-
-        // To lower canvas resolution on mobile devices to gain some
-        // performance, uncomment the following line:
-        // config.devicePixelRatio = 1;
-
-
+        // iOS can leave the page scrolled after a rotation or the keyboard: snap it back.
+        window.addEventListener("resize", function () { window.scrollTo(0, 0); });
       } else {
         // Desktop style: Render the game canvas container in a window that can be maximized to fullscreen:
         fullscreenContainer.style.width = "960px";
@@ -167,7 +185,7 @@
                 };
 
               }).catch((message) => {
-                unityShowBanner(message, 'error');
+                alert(message);
               });
             };
 
